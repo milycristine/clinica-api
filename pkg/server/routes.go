@@ -7,7 +7,10 @@ import (
 	routes "clinica-api/pkg/routes"
 )
 
-
 func SetupRoutes(mux *http.ServeMux, db *dbsql.SQLStr) {
 	routes.RegisterAuthRoutes(mux, db)
+	routes.RegisterPontoRoutes(mux, db)
+	routes.RegisterFuncionarioRoutes(mux, db)
+	routes.RegisterUnidadeRoutes(mux, db)
+
 }

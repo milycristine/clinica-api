@@ -20,6 +20,7 @@ func StartServer(port string, db *dbsql.SQLStr, assets embed.FS) error {
 		mux.Handle("/html/", http.StripPrefix("/html/", http.FileServer(http.FS(assets))))
 	}
 
+	
 	addr := fmt.Sprintf(":%s", port)
 	log.Printf("Iniciando servidor na porta %s ", addr)
 	return http.ListenAndServe(addr, mux)
