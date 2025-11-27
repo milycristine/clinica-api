@@ -1,0 +1,10 @@
+api:
+  host:  Nlocalhost
+  port: 8080
+
+sql:
+  host: "Nhost"
+  port: "1433"
+  database: "UsersDB"  
+  username: "userdbservidor"
+  password: "passwordservidor"
