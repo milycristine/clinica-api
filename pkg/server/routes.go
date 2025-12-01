@@ -12,5 +12,6 @@ func SetupRoutes(mux *http.ServeMux, db *dbsql.SQLStr) {
 	routes.RegisterPontoRoutes(mux, db)
 	routes.RegisterFuncionarioRoutes(mux, db)
 	routes.RegisterUnidadeRoutes(mux, db)
+	routes.RegisterPacienteRoutes(mux, db)
 
 }
