@@ -26,24 +26,33 @@ func NovoContatoRepository(conn *database.SQLStr) ContatoRepository {
 func (r *contatoRepository) CriarContato(c *models.Leads) error {
 	query := `
 		INSERT INTO Leads
-		(DataContato, MeioContato, Nome, Telefone, ProcedimentoInteresse, Observacoes, Status, FuncionarioId)
-		VALUES (@DataContato, @MeioContato, @Nome, @Telefone, @ProcedimentoInteresse, @Observacoes, @Status, @FuncionarioId)
+		(DataContato, MeioContato, Nome, Telefone, Observacoes, Status, FuncionarioId)
+		OUTPUT INSERTED.ContatoId
+		VALUES (@DataContato, @MeioContato, @Nome, @Telefone, @Observacoes, @Status, @FuncionarioId)
 	`
 
-	_, err := r.db.Exec(
+	var id int
+
+	err := r.db.QueryRow(
 		query,
 		sql.Named("DataContato", c.DataContato),
 		sql.Named("MeioContato", c.MeioContato),
 		sql.Named("Nome", c.Nome),
 		sql.Named("Telefone", c.Telefone),
-		sql.Named("ProcedimentoInteresse", c.ProcedimentoInteresse),
 		sql.Named("Observacoes", c.Observacoes),
 		sql.Named("Status", c.Status),
 		sql.Named("FuncionarioId", c.FuncionarioId),
-	)
+	).Scan(&id)
 
-	return err
+	if err != nil {
+		return err
+	}
+
+	c.ContatoId = id
+
+	return nil
 }
+
 func (r *contatoRepository) EditarContato(c *models.Leads) error {
 	query := `
 		UPDATE Leads SET 
@@ -51,7 +60,6 @@ func (r *contatoRepository) EditarContato(c *models.Leads) error {
 			MeioContato = @MeioContato,
 			Nome = @Nome,
 			Telefone = @Telefone,
-			ProcedimentoInteresse = @ProcedimentoInteresse,
 			Observacoes = @Observacoes,
 			Status = @Status,
 			FuncionarioId = @FuncionarioId,
@@ -65,7 +73,6 @@ func (r *contatoRepository) EditarContato(c *models.Leads) error {
 		sql.Named("MeioContato", c.MeioContato),
 		sql.Named("Nome", c.Nome),
 		sql.Named("Telefone", c.Telefone),
-		sql.Named("ProcedimentoInteresse", c.ProcedimentoInteresse),
 		sql.Named("Observacoes", c.Observacoes),
 		sql.Named("Status", c.Status),
 		sql.Named("FuncionarioId", c.FuncionarioId),
@@ -97,7 +104,6 @@ func (r *contatoRepository) ListarContatos() ([]models.Leads, error) {
 			&c.MeioContato,
 			&c.Nome,
 			&c.Telefone,
-			&c.ProcedimentoInteresse,
 			&obs,
 			&c.Status,
 			&c.DataAtualizacao,
@@ -138,7 +144,6 @@ func (r *contatoRepository) BuscarContatoPorID(id int) (*models.Leads, error) {
 		&c.MeioContato,
 		&c.Nome,
 		&c.Telefone,
-		&c.ProcedimentoInteresse,
 		&obs,
 		&c.Status,
 		&c.DataAtualizacao,

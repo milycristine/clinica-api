@@ -101,10 +101,19 @@ func (h *contatoHandler) BuscarContatoPorID(w http.ResponseWriter, r *http.Reque
 func (h *contatoHandler) AtualizarStatus(w http.ResponseWriter, r *http.Request) {
 	idStr := r.URL.Query().Get("id")
 	status := r.URL.Query().Get("status")
+	funcStr := r.URL.Query().Get("funcionarioId")
 
 	id, _ := strconv.Atoi(idStr)
 
-	err := h.service.AtualizarStatus(id, status)
+	var funcionarioId *int
+	if funcStr != "" {
+		fid, err := strconv.Atoi(funcStr)
+		if err == nil {
+			funcionarioId = &fid
+		}
+	}
+
+	err := h.service.AtualizarStatus(id, status, funcionarioId)
 	response := models.ResponseDefaultModel{IsSuccess: err == nil}
 
 	if err != nil {
@@ -115,3 +124,4 @@ func (h *contatoHandler) AtualizarStatus(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
+

@@ -20,7 +20,6 @@ type Funcionario struct {
 	ValeTransporteSemanal *float64 `json:"vtSemanal,omitempty"`
 	ChavePix              *string  `json:"chavepix,omitempty"`
 
-	// NOVOS CAMPOS
 	TipoVinculo           string   `json:"tipoVinculo"`
 	PercentualRepasse     *float64 `json:"percentualRepasse"`
 	ValorFixoProcedimento *float64 `json:"valorFixoProcedimento"`
