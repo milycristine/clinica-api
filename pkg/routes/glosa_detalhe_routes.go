@@ -8,8 +8,10 @@ import (
 
 func RegisterGlosasDetalhesRoutes(mux *http.ServeMux, db *dbsql.SQLStr) {
 
+	glosaMensalRepo := glosas.NovoGlosaMensalRepository(db)
+
 	repo := glosas.NovoGlosaDetalheRepository(db)
-	svc := glosas.NovoGlosaDetalheService(repo)
+	svc := glosas.NovoGlosaDetalheService(repo, glosaMensalRepo)
 	handler := glosas.NovoGlosaDetalheHandler(svc)
 
 	mux.HandleFunc("/glosaDetalhe", handler.CriarGlosa)

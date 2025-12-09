@@ -13,6 +13,7 @@ type GlosaDetalheRepository interface {
 	EditarGlosa(g *models.GlosaDetalhe) error
 	ListarGlosas() ([]models.GlosaDetalhe, error)
 	BuscarPorId(id int) (*models.GlosaDetalhe, error)
+	ExisteGlosa(g *models.GlosaDetalhe) (bool, error)
 }
 
 type glosaDetalheRepository struct {
@@ -26,16 +27,25 @@ func NovoGlosaDetalheRepository(conn *database.SQLStr) GlosaDetalheRepository {
 }
 
 func (r *glosaDetalheRepository) CriarGlosa(g *models.GlosaDetalhe) error {
+
+	if g.GlosasMensalId == nil {
+		return fmt.Errorf("GlosasMensalId é obrigatório")
+	}
+
 	query := `
-        INSERT INTO GlosasDetalhes
-        (Guia, DataOcorrencia, PacienteId, Mo, NomeContratado, CodigoProcedimento, 
-        NomeProcedimento, DenteRegiao, ValorInformado, ValorGlosado, MotivoGlosa, StatusRecurso)
-        VALUES
-        (@Guia, @DataOcorrencia, @PacienteId, @Mo, @NomeContratado, @CodigoProcedimento,
-        @NomeProcedimento, @DenteRegiao, @ValorInformado, @ValorGlosado, @MotivoGlosa, @StatusRecurso)
-    `
+    INSERT INTO GlosasDetalhes
+    (GlosasMensalId, UnidadeId, Guia, DataOcorrencia, PacienteId, Mo, NomeContratado, 
+     CodigoProcedimento, NomeProcedimento, DenteRegiao, ValorInformado, 
+     ValorGlosado, MotivoGlosa, StatusRecurso)
+    VALUES
+    (@MensalId, @UnidadeId, @Guia, @DataOcorrencia, @PacienteId, @Mo, @NomeContratado,
+    @CodigoProcedimento, @NomeProcedimento, @DenteRegiao, @ValorInformado, 
+    @ValorGlosado, @MotivoGlosa, @StatusRecurso)
+`
 
 	_, err := r.db.Exec(query,
+		sql.Named("MensalId", g.GlosasMensalId),
+		sql.Named("UnidadeId", g.UnidadeId),
 		sql.Named("Guia", g.Guia),
 		sql.Named("DataOcorrencia", g.DataOcorrencia),
 		sql.Named("PacienteId", g.PacienteId),
@@ -54,7 +64,8 @@ func (r *glosaDetalheRepository) CriarGlosa(g *models.GlosaDetalhe) error {
 		return fmt.Errorf("erro ao criar glosa: %w", err)
 	}
 
-	return nil
+	mensalRepo := NovoGlosaMensalRepository(database.NewFromDB(r.db))
+	return mensalRepo.RecalcularGlosaMensal(*g.GlosasMensalId)
 }
 
 func (r *glosaDetalheRepository) EditarGlosa(g *models.GlosaDetalhe) error {
@@ -136,7 +147,12 @@ func (r *glosaDetalheRepository) EditarGlosa(g *models.GlosaDetalhe) error {
 		return fmt.Errorf("erro ao atualizar glosa: %w", err)
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	mensalRepo := NovoGlosaMensalRepository(database.NewFromDB(r.db))
+	return mensalRepo.RecalcularGlosaMensal(*g.GlosasMensalId)
 }
 
 func (r *glosaDetalheRepository) ListarGlosas() ([]models.GlosaDetalhe, error) {
@@ -145,7 +161,7 @@ func (r *glosaDetalheRepository) ListarGlosas() ([]models.GlosaDetalhe, error) {
 	rows, err := r.db.Query(`
         SELECT GlosaDetalheId, Guia, DataOcorrencia, PacienteId, Mo,
                NomeContratado, CodigoProcedimento, NomeProcedimento,
-               DenteRegiao, ValorInformado, ValorGlosado, MotivoGlosa, StatusRecurso
+               DenteRegiao, ValorInformado, ValorGlosado, MotivoGlosa, StatusRecurso, UnidadeId
         FROM GlosasDetalhes WITH (NOLOCK)
         ORDER BY DataOcorrencia DESC
     `)
@@ -170,6 +186,7 @@ func (r *glosaDetalheRepository) ListarGlosas() ([]models.GlosaDetalhe, error) {
 			&g.ValorGlosado,
 			&g.MotivoGlosa,
 			&g.StatusRecurso,
+			&g.UnidadeId,
 		)
 		lista = append(lista, g)
 	}
@@ -183,7 +200,7 @@ func (r *glosaDetalheRepository) BuscarPorId(id int) (*models.GlosaDetalhe, erro
 	query := `
         SELECT GlosaDetalheId, Guia, DataOcorrencia, PacienteId, Mo,
                NomeContratado, CodigoProcedimento, NomeProcedimento,
-               DenteRegiao, ValorInformado, ValorGlosado, MotivoGlosa, StatusRecurso
+               DenteRegiao, ValorInformado, ValorGlosado, MotivoGlosa, StatusRecurso, UnidadeId
         FROM GlosasDetalhes
         WHERE GlosaDetalheId = @Id
     `
@@ -202,6 +219,7 @@ func (r *glosaDetalheRepository) BuscarPorId(id int) (*models.GlosaDetalhe, erro
 		&g.ValorGlosado,
 		&g.MotivoGlosa,
 		&g.StatusRecurso,
+		&g.UnidadeId,
 	)
 
 	if err == sql.ErrNoRows {
@@ -213,4 +231,29 @@ func (r *glosaDetalheRepository) BuscarPorId(id int) (*models.GlosaDetalhe, erro
 	}
 
 	return &g, nil
+}
+func (r *glosaDetalheRepository) ExisteGlosa(g *models.GlosaDetalhe) (bool, error) {
+	var count int
+	query := `
+        SELECT COUNT(1)
+        FROM GlosasDetalhes
+        WHERE Guia = @Guia
+          AND CodigoProcedimento = @CodigoProcedimento
+          AND PacienteId = @PacienteId
+          AND DataOcorrencia = @DataOcorrencia
+          AND UnidadeId = @UnidadeId
+    `
+	err := r.db.QueryRow(query,
+		sql.Named("Guia", g.Guia),
+		sql.Named("CodigoProcedimento", g.CodigoProcedimento),
+		sql.Named("PacienteId", g.PacienteId),
+		sql.Named("DataOcorrencia", g.DataOcorrencia),
+		sql.Named("UnidadeId", g.UnidadeId),
+	).Scan(&count)
+
+	if err != nil {
+		return false, err
+	}
+
+	return count > 0, nil
 }
