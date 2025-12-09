@@ -48,3 +48,7 @@ func (s *SQLStr) GetTokenTiny() (string, error) {
 	}
 	return token, nil
 }
+
+func NewFromDB(db *sql.DB) *SQLStr {
+    return &SQLStr{db: db}
+}
