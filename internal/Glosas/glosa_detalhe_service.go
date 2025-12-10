@@ -24,6 +24,7 @@ func NovoGlosaDetalheService(repo GlosaDetalheRepository, mensalRepo GlosaMensal
 		mensalRepo: mensalRepo,
 	}
 }
+
 func (s *glosaDetalheService) CriarGlosa(g *models.GlosaDetalhe) error {
 	data, err := time.Parse("2006-01-02", g.DataOcorrencia)
 	if err != nil {
@@ -37,12 +38,16 @@ func (s *glosaDetalheService) CriarGlosa(g *models.GlosaDetalhe) error {
 		return fmt.Errorf("UnidadeId é obrigatório")
 	}
 
+	if len(g.Procedimentos) == 0 {
+		return fmt.Errorf("é obrigatório informar ao menos um procedimento")
+	}
+
 	existe, err := s.repo.ExisteGlosa(g)
 	if err != nil {
 		return fmt.Errorf("erro ao verificar duplicidade: %v", err)
 	}
 	if existe {
-		return fmt.Errorf("glosa detalhe já existe para essa guia, paciente, procedimento, data e unidade")
+		return fmt.Errorf("glosa detalhe já existe para essa guia, paciente, data e unidade")
 	}
 
 	mensalId, err := s.mensalRepo.BuscarOuCriarMensal(mes, ano, g.UnidadeId)
@@ -60,6 +65,9 @@ func (s *glosaDetalheService) CriarGlosa(g *models.GlosaDetalhe) error {
 }
 
 func (s *glosaDetalheService) EditarGlosa(g *models.GlosaDetalhe) error {
+	if len(g.Procedimentos) == 0 {
+		return fmt.Errorf("é obrigatório informar ao menos um procedimento")
+	}
 
 	if err := s.repo.EditarGlosa(g); err != nil {
 		return err

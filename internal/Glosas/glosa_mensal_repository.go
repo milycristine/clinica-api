@@ -165,26 +165,27 @@ func (r *glosaMensalRepository) BuscarGlosaMensalPorID(id int) (*models.GlosaMen
 	return &gm, nil
 }
 
-
 func (r *glosaMensalRepository) RecalcularGlosaMensal(glosasMensalId int) error {
 	query := `
         UPDATE GlosasMensais
         SET 
             ValorInformado = (
                 SELECT ISNULL(SUM(ValorInformado), 0)
-                FROM GlosasDetalhes
-                WHERE GlosasMensalId = @Id
+                FROM GlosaProcedimentos GP
+                INNER JOIN GlosasDetalhes GD ON GP.GlosaDetalheId = GD.GlosaDetalheId
+                WHERE GD.GlosasMensalId = @Id
             ),
             ValorGlosa = (
                 SELECT ISNULL(SUM(ValorGlosado), 0)
-                FROM GlosasDetalhes
-                WHERE GlosasMensalId = @Id
+                FROM GlosaProcedimentos GP
+                INNER JOIN GlosasDetalhes GD ON GP.GlosaDetalheId = GD.GlosaDetalheId
+                WHERE GD.GlosasMensalId = @Id
             ),
             ValorPago = (
-                SELECT 
-                    ISNULL(SUM(ValorInformado - ValorGlosado), 0)
-                FROM GlosasDetalhes
-                WHERE GlosasMensalId = @Id
+                SELECT ISNULL(SUM(GP.ValorInformado - GP.ValorGlosado), 0)
+                FROM GlosaProcedimentos GP
+                INNER JOIN GlosasDetalhes GD ON GP.GlosaDetalheId = GD.GlosaDetalheId
+                WHERE GD.GlosasMensalId = @Id
             ),
             DataAtualizacao = GETDATE()
         WHERE GlosasMensalId = @Id
@@ -197,39 +198,40 @@ func (r *glosaMensalRepository) RecalcularGlosaMensal(glosasMensalId int) error 
 
 	return nil
 }
+
 func (r *glosaMensalRepository) BuscarOuCriarMensal(mes int, ano int, unidadeId int) (int, error) {
-    query := `
+	query := `
         SELECT GlosasMensalId 
         FROM GlosasMensais 
         WHERE MesReferencia = @Mes AND AnoReferencia = @Ano AND UnidadeId = @Unidade;
     `
 
-    var id int
-    err := r.db.QueryRow(query,
-        sql.Named("Mes", mes),
-        sql.Named("Ano", ano),
-        sql.Named("Unidade", unidadeId),
-    ).Scan(&id)
+	var id int
+	err := r.db.QueryRow(query,
+		sql.Named("Mes", mes),
+		sql.Named("Ano", ano),
+		sql.Named("Unidade", unidadeId),
+	).Scan(&id)
 
-    if err == nil {
-        return id, nil 
-    }
+	if err == nil {
+		return id, nil
+	}
 
-    if err != sql.ErrNoRows {
-        return 0, err
-    }
+	if err != sql.ErrNoRows {
+		return 0, err
+	}
 
-    insert := `
+	insert := `
         INSERT INTO GlosasMensais (MesReferencia, AnoReferencia, ValorInformado, ValorGlosa, ValorPago, Observacoes, UnidadeId)
         OUTPUT INSERTED.GlosasMensalId
         VALUES (@Mes, @Ano, 0, 0, 0, '', @Unidade)
     `
 
-    err = r.db.QueryRow(insert,
-        sql.Named("Mes", mes),
-        sql.Named("Ano", ano),
-        sql.Named("Unidade", unidadeId),
-    ).Scan(&id)
+	err = r.db.QueryRow(insert,
+		sql.Named("Mes", mes),
+		sql.Named("Ano", ano),
+		sql.Named("Unidade", unidadeId),
+	).Scan(&id)
 
-    return id, err
+	return id, err
 }
