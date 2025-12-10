@@ -1,259 +1,301 @@
 package glosa
 
 import (
-	database "clinica-api/database"
-	"clinica-api/internal/models"
-	"database/sql"
-	"fmt"
-	"strings"
+    "clinica-api/database"
+    "clinica-api/internal/models"
+    "database/sql"
+    "fmt"
+    "strings"
 )
 
 type GlosaDetalheRepository interface {
-	CriarGlosa(g *models.GlosaDetalhe) error
-	EditarGlosa(g *models.GlosaDetalhe) error
-	ListarGlosas() ([]models.GlosaDetalhe, error)
-	BuscarPorId(id int) (*models.GlosaDetalhe, error)
-	ExisteGlosa(g *models.GlosaDetalhe) (bool, error)
+    CriarGlosa(g *models.GlosaDetalhe) error
+    EditarGlosa(g *models.GlosaDetalhe) error
+    ListarGlosas() ([]models.GlosaDetalhe, error)
+    BuscarPorId(id int) (*models.GlosaDetalhe, error)
+    ExisteGlosa(g *models.GlosaDetalhe) (bool, error)
 }
 
 type glosaDetalheRepository struct {
-	db *sql.DB
+    db *sql.DB
 }
 
 func NovoGlosaDetalheRepository(conn *database.SQLStr) GlosaDetalheRepository {
-	return &glosaDetalheRepository{
-		db: conn.DB(),
-	}
+    return &glosaDetalheRepository{
+        db: conn.DB(),
+    }
 }
 
 func (r *glosaDetalheRepository) CriarGlosa(g *models.GlosaDetalhe) error {
+    tx, err := r.db.Begin()
+    if err != nil {
+        return err
+    }
 
-	if g.GlosasMensalId == nil {
-		return fmt.Errorf("GlosasMensalId é obrigatório")
-	}
+    // Inserir registro principal
+    query := `
+        INSERT INTO GlosasDetalhes 
+        (GlosasMensalId, UnidadeId, Guia, DataOcorrencia, PacienteId, Mo, NomeContratado, 
+         DenteRegiao, MotivoGlosa, StatusRecurso)
+        OUTPUT INSERTED.GlosaDetalheId
+        VALUES (@MensalId, @UnidadeId, @Guia, @DataOcorrencia, @PacienteId, @Mo, @NomeContratado,
+                @DenteRegiao, @MotivoGlosa, @StatusRecurso)
+    `
 
-	query := `
-    INSERT INTO GlosasDetalhes
-    (GlosasMensalId, UnidadeId, Guia, DataOcorrencia, PacienteId, Mo, NomeContratado, 
-     CodigoProcedimento, NomeProcedimento, DenteRegiao, ValorInformado, 
-     ValorGlosado, MotivoGlosa, StatusRecurso)
-    VALUES
-    (@MensalId, @UnidadeId, @Guia, @DataOcorrencia, @PacienteId, @Mo, @NomeContratado,
-    @CodigoProcedimento, @NomeProcedimento, @DenteRegiao, @ValorInformado, 
-    @ValorGlosado, @MotivoGlosa, @StatusRecurso)
-`
+    var detalheId int
+    err = tx.QueryRow(
+        query,
+        sql.Named("MensalId", g.GlosasMensalId),
+        sql.Named("UnidadeId", g.UnidadeId),
+        sql.Named("Guia", g.Guia),
+        sql.Named("DataOcorrencia", g.DataOcorrencia),
+        sql.Named("PacienteId", g.PacienteId),
+        sql.Named("Mo", g.Mo),
+        sql.Named("NomeContratado", g.NomeContratado),
+        sql.Named("DenteRegiao", g.DenteRegiao),
+        sql.Named("MotivoGlosa", g.MotivoGlosa),
+        sql.Named("StatusRecurso", g.StatusRecurso),
+    ).Scan(&detalheId)
 
-	_, err := r.db.Exec(query,
-		sql.Named("MensalId", g.GlosasMensalId),
-		sql.Named("UnidadeId", g.UnidadeId),
-		sql.Named("Guia", g.Guia),
-		sql.Named("DataOcorrencia", g.DataOcorrencia),
-		sql.Named("PacienteId", g.PacienteId),
-		sql.Named("Mo", g.Mo),
-		sql.Named("NomeContratado", g.NomeContratado),
-		sql.Named("CodigoProcedimento", g.CodigoProcedimento),
-		sql.Named("NomeProcedimento", g.NomeProcedimento),
-		sql.Named("DenteRegiao", g.DenteRegiao),
-		sql.Named("ValorInformado", g.ValorInformado),
-		sql.Named("ValorGlosado", g.ValorGlosado),
-		sql.Named("MotivoGlosa", g.MotivoGlosa),
-		sql.Named("StatusRecurso", g.StatusRecurso),
-	)
+    if err != nil {
+        tx.Rollback()
+        return fmt.Errorf("erro ao criar GlosasDetalhes: %w", err)
+    }
 
-	if err != nil {
-		return fmt.Errorf("erro ao criar glosa: %w", err)
-	}
+    // Inserir múltiplos procedimentos
+    for _, p := range g.Procedimentos {
+        _, err = tx.Exec(`
+            INSERT INTO GlosaProcedimentos
+            (GlosaDetalheId, ProcedimentoId, CodigoProcedimento, NomeProcedimento,
+             Quantidade, ValorInformado, ValorGlosado)
+            VALUES (@GID, @PID, @Cod, @Nome, @Qtd, @VInf, @VGlos)
+        `,
+            sql.Named("GID", detalheId),
+            sql.Named("PID", p.ProcedimentoId),
+            sql.Named("Cod", p.CodigoProcedimento),
+            sql.Named("Nome", p.NomeProcedimento),
+            sql.Named("Qtd", p.Quantidade),
+            sql.Named("VInf", p.ValorInformado),
+            sql.Named("VGlos", p.ValorGlosado),
+        )
 
-	mensalRepo := NovoGlosaMensalRepository(database.NewFromDB(r.db))
-	return mensalRepo.RecalcularGlosaMensal(*g.GlosasMensalId)
+        if err != nil {
+            tx.Rollback()
+            return fmt.Errorf("erro ao inserir procedimentos: %w", err)
+        }
+    }
+
+    return tx.Commit()
 }
 
 func (r *glosaDetalheRepository) EditarGlosa(g *models.GlosaDetalhe) error {
-	tx, err := r.db.Begin()
-	if err != nil {
-		return fmt.Errorf("erro ao iniciar transação: %w", err)
-	}
+    tx, err := r.db.Begin()
+    if err != nil {
+        return err
+    }
 
-	var setClauses []string
-	var args []any
+    var setClauses []string
+    var args []any
 
-	if g.Guia != "" {
-		setClauses = append(setClauses, "Guia = @Guia")
-		args = append(args, sql.Named("Guia", g.Guia))
-	}
-	if g.DataOcorrencia != "" {
-		setClauses = append(setClauses, "DataOcorrencia = @DataOcorrencia")
-		args = append(args, sql.Named("DataOcorrencia", g.DataOcorrencia))
-	}
-	if g.PacienteId != 0 {
-		setClauses = append(setClauses, "PacienteId = @PacienteId")
-		args = append(args, sql.Named("PacienteId", g.PacienteId))
-	}
-	if g.Mo != "" {
-		setClauses = append(setClauses, "Mo = @Mo")
-		args = append(args, sql.Named("Mo", g.Mo))
-	}
-	if g.NomeContratado != "" {
-		setClauses = append(setClauses, "NomeContratado = @NomeContratado")
-		args = append(args, sql.Named("NomeContratado", g.NomeContratado))
-	}
-	if g.CodigoProcedimento != "" {
-		setClauses = append(setClauses, "CodigoProcedimento = @CodigoProcedimento")
-		args = append(args, sql.Named("CodigoProcedimento", g.CodigoProcedimento))
-	}
-	if g.NomeProcedimento != "" {
-		setClauses = append(setClauses, "NomeProcedimento = @NomeProcedimento")
-		args = append(args, sql.Named("NomeProcedimento", g.NomeProcedimento))
-	}
-	if g.DenteRegiao != "" {
-		setClauses = append(setClauses, "DenteRegiao = @DenteRegiao")
-		args = append(args, sql.Named("DenteRegiao", g.DenteRegiao))
-	}
-	if g.ValorInformado != 0 {
-		setClauses = append(setClauses, "ValorInformado = @ValorInformado")
-		args = append(args, sql.Named("ValorInformado", g.ValorInformado))
-	}
-	if g.ValorGlosado != 0 {
-		setClauses = append(setClauses, "ValorGlosado = @ValorGlosado")
-		args = append(args, sql.Named("ValorGlosado", g.ValorGlosado))
-	}
-	if g.MotivoGlosa != "" {
-		setClauses = append(setClauses, "MotivoGlosa = @MotivoGlosa")
-		args = append(args, sql.Named("MotivoGlosa", g.MotivoGlosa))
-	}
-	if g.StatusRecurso != "" {
-		setClauses = append(setClauses, "StatusRecurso = @StatusRecurso")
-		args = append(args, sql.Named("StatusRecurso", g.StatusRecurso))
-	}
+    campos := map[string]any{
+        "Guia":           g.Guia,
+        "DataOcorrencia": g.DataOcorrencia,
+        "PacienteId":     g.PacienteId,
+        "Mo":             g.Mo,
+        "NomeContratado": g.NomeContratado,
+        "DenteRegiao":    g.DenteRegiao,
+        "MotivoGlosa":    g.MotivoGlosa,
+        "StatusRecurso":  g.StatusRecurso,
+    }
 
-	if len(setClauses) == 0 {
-		tx.Rollback()
-		return fmt.Errorf("nenhum campo informado para atualização")
-	}
+    for campo, valor := range campos {
+        switch v := valor.(type) {
+        case string:
+            if v != "" {
+                setClauses = append(setClauses, fmt.Sprintf("%s = @%s", campo, campo))
+                args = append(args, sql.Named(campo, v))
+            }
+        case int:
+            if v != 0 {
+                setClauses = append(setClauses, fmt.Sprintf("%s = @%s", campo, campo))
+                args = append(args, sql.Named(campo, v))
+            }
+        }
+    }
 
-	if g.GlosaDetalheId == 0 {
-		tx.Rollback()
-		return fmt.Errorf("id da glosa é obrigatório para atualização")
-	}
+    if len(setClauses) == 0 {
+        tx.Rollback()
+        return fmt.Errorf("nenhum campo informado para atualização")
+    }
 
-	args = append(args, sql.Named("Id", g.GlosaDetalheId))
+    args = append(args, sql.Named("Id", g.GlosaDetalheId))
 
-	query := fmt.Sprintf("UPDATE GlosasDetalhes SET %s WHERE GlosaDetalheId = @Id",
-		strings.Join(setClauses, ", "))
+    query := fmt.Sprintf(
+        "UPDATE GlosasDetalhes SET %s WHERE GlosaDetalheId = @Id",
+        strings.Join(setClauses, ", "),
+    )
 
-	_, err = tx.Exec(query, args...)
-	if err != nil {
-		tx.Rollback()
-		return fmt.Errorf("erro ao atualizar glosa: %w", err)
-	}
+    _, err = tx.Exec(query, args...)
+    if err != nil {
+        tx.Rollback()
+        return err
+    }
 
-	if err := tx.Commit(); err != nil {
-		return err
-	}
+    // atualizar procedimentos (simples: apaga e recria)
+    _, err = tx.Exec("DELETE FROM GlosaProcedimentos WHERE GlosaDetalheId = @Id",
+        sql.Named("Id", g.GlosaDetalheId),
+    )
+    if err != nil {
+        tx.Rollback()
+        return err
+    }
 
-	mensalRepo := NovoGlosaMensalRepository(database.NewFromDB(r.db))
-	return mensalRepo.RecalcularGlosaMensal(*g.GlosasMensalId)
+    for _, p := range g.Procedimentos {
+        _, err = tx.Exec(`
+            INSERT INTO GlosaProcedimentos
+            (GlosaDetalheId, ProcedimentoId, CodigoProcedimento, NomeProcedimento,
+             Quantidade, ValorInformado, ValorGlosado)
+            VALUES (@GID, @PID, @Cod, @Nome, @Qtd, @VInf, @VGlos)
+        `,
+            sql.Named("GID", g.GlosaDetalheId),
+            sql.Named("PID", p.ProcedimentoId),
+            sql.Named("Cod", p.CodigoProcedimento),
+            sql.Named("Nome", p.NomeProcedimento),
+            sql.Named("Qtd", p.Quantidade),
+            sql.Named("VInf", p.ValorInformado),
+            sql.Named("VGlos", p.ValorGlosado),
+        )
+        if err != nil {
+            tx.Rollback()
+            return err
+        }
+    }
+
+    return tx.Commit()
 }
 
 func (r *glosaDetalheRepository) ListarGlosas() ([]models.GlosaDetalhe, error) {
-	lista := []models.GlosaDetalhe{}
+    lista := []models.GlosaDetalhe{}
 
-	rows, err := r.db.Query(`
-        SELECT GlosaDetalheId, Guia, DataOcorrencia, PacienteId, Mo,
-               NomeContratado, CodigoProcedimento, NomeProcedimento,
-               DenteRegiao, ValorInformado, ValorGlosado, MotivoGlosa, StatusRecurso, UnidadeId
+    rows, err := r.db.Query(`
+        SELECT GlosaDetalheId, Guia, DataOcorrencia, PacienteId, Mo, NomeContratado,
+               DenteRegiao, MotivoGlosa, StatusRecurso, UnidadeId
         FROM GlosasDetalhes WITH (NOLOCK)
         ORDER BY DataOcorrencia DESC
     `)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
 
-	for rows.Next() {
-		var g models.GlosaDetalhe
-		rows.Scan(
-			&g.GlosaDetalheId,
-			&g.Guia,
-			&g.DataOcorrencia,
-			&g.PacienteId,
-			&g.Mo,
-			&g.NomeContratado,
-			&g.CodigoProcedimento,
-			&g.NomeProcedimento,
-			&g.DenteRegiao,
-			&g.ValorInformado,
-			&g.ValorGlosado,
-			&g.MotivoGlosa,
-			&g.StatusRecurso,
-			&g.UnidadeId,
-		)
-		lista = append(lista, g)
-	}
+    for rows.Next() {
+        var g models.GlosaDetalhe
 
-	return lista, nil
+        rows.Scan(
+            &g.GlosaDetalheId,
+            &g.Guia,
+            &g.DataOcorrencia,
+            &g.PacienteId,
+            &g.Mo,
+            &g.NomeContratado,
+            &g.DenteRegiao,
+            &g.MotivoGlosa,
+            &g.StatusRecurso,
+            &g.UnidadeId,
+        )
+
+        // pegar procedimentos
+        g.Procedimentos, _ = r.buscarProcedimentos(g.GlosaDetalheId)
+
+        lista = append(lista, g)
+    }
+
+    return lista, nil
 }
 
 func (r *glosaDetalheRepository) BuscarPorId(id int) (*models.GlosaDetalhe, error) {
-	var g models.GlosaDetalhe
+    var g models.GlosaDetalhe
 
-	query := `
+    query := `
         SELECT GlosaDetalheId, Guia, DataOcorrencia, PacienteId, Mo,
-               NomeContratado, CodigoProcedimento, NomeProcedimento,
-               DenteRegiao, ValorInformado, ValorGlosado, MotivoGlosa, StatusRecurso, UnidadeId
+               NomeContratado, DenteRegiao, MotivoGlosa, StatusRecurso, UnidadeId
         FROM GlosasDetalhes
         WHERE GlosaDetalheId = @Id
     `
 
-	err := r.db.QueryRow(query, sql.Named("Id", id)).Scan(
-		&g.GlosaDetalheId,
-		&g.Guia,
-		&g.DataOcorrencia,
-		&g.PacienteId,
-		&g.Mo,
-		&g.NomeContratado,
-		&g.CodigoProcedimento,
-		&g.NomeProcedimento,
-		&g.DenteRegiao,
-		&g.ValorInformado,
-		&g.ValorGlosado,
-		&g.MotivoGlosa,
-		&g.StatusRecurso,
-		&g.UnidadeId,
-	)
+    err := r.db.QueryRow(query, sql.Named("Id", id)).Scan(
+        &g.GlosaDetalheId,
+        &g.Guia,
+        &g.DataOcorrencia,
+        &g.PacienteId,
+        &g.Mo,
+        &g.NomeContratado,
+        &g.DenteRegiao,
+        &g.MotivoGlosa,
+        &g.StatusRecurso,
+        &g.UnidadeId,
+    )
 
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
+    if err == sql.ErrNoRows {
+        return nil, nil
+    }
+    if err != nil {
+        return nil, err
+    }
 
-	if err != nil {
-		return nil, err
-	}
+    g.Procedimentos, _ = r.buscarProcedimentos(id)
 
-	return &g, nil
+    return &g, nil
 }
+
 func (r *glosaDetalheRepository) ExisteGlosa(g *models.GlosaDetalhe) (bool, error) {
-	var count int
-	query := `
+    var count int
+    query := `
         SELECT COUNT(1)
         FROM GlosasDetalhes
         WHERE Guia = @Guia
-          AND CodigoProcedimento = @CodigoProcedimento
           AND PacienteId = @PacienteId
           AND DataOcorrencia = @DataOcorrencia
           AND UnidadeId = @UnidadeId
     `
-	err := r.db.QueryRow(query,
-		sql.Named("Guia", g.Guia),
-		sql.Named("CodigoProcedimento", g.CodigoProcedimento),
-		sql.Named("PacienteId", g.PacienteId),
-		sql.Named("DataOcorrencia", g.DataOcorrencia),
-		sql.Named("UnidadeId", g.UnidadeId),
-	).Scan(&count)
+    err := r.db.QueryRow(query,
+        sql.Named("Guia", g.Guia),
+        sql.Named("PacienteId", g.PacienteId),
+        sql.Named("DataOcorrencia", g.DataOcorrencia),
+        sql.Named("UnidadeId", g.UnidadeId),
+    ).Scan(&count)
 
-	if err != nil {
-		return false, err
-	}
+    return count > 0, err
+}
 
-	return count > 0, nil
+func (r *glosaDetalheRepository) buscarProcedimentos(glosaId int) ([]models.GlosaProcedimento, error) {
+    lista := []models.GlosaProcedimento{}
+
+    rows, err := r.db.Query(`
+        SELECT GlosaProcedimentoId, ProcedimentoId, CodigoProcedimento, NomeProcedimento,
+               Quantidade, ValorInformado, ValorGlosado
+        FROM GlosaProcedimentos
+        WHERE GlosaDetalheId = @Id
+    `, sql.Named("Id", glosaId))
+
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+    for rows.Next() {
+        var p models.GlosaProcedimento
+        rows.Scan(
+            &p.GlosaProcedimentoId,
+            &p.ProcedimentoId,
+            &p.CodigoProcedimento,
+            &p.NomeProcedimento,
+            &p.Quantidade,
+            &p.ValorInformado,
+            &p.ValorGlosado,
+        )
+        lista = append(lista, p)
+    }
+
+    return lista, nil
 }
