@@ -5,7 +5,7 @@ import "clinica-api/internal/models"
 type ControleProteseService interface {
 	Criar(c *models.ControleProtese) error
 	Editar(c *models.ControleProtese) error
-	Listar() ([]models.ControleProtese, error)
+	Listar(page int, limit int) ([]models.ControleProtese, error)
 	BuscarPorID(id int) (*models.ControleProtese, error)
 	AlterarStatus(id int, status string) error
 	ListarFiltrado(
@@ -17,6 +17,8 @@ type ControleProteseService interface {
 		pacienteId int,
 		produto string,
 		etapa string,
+		page int,
+		limit int,
 	) ([]models.ControleProtese, error)
 }
 
@@ -39,8 +41,8 @@ func (s *controleService) Editar(c *models.ControleProtese) error {
 	return s.repo.Editar(c)
 }
 
-func (s *controleService) Listar() ([]models.ControleProtese, error) {
-	return s.repo.Listar()
+func (s *controleService) Listar(page int, limit int) ([]models.ControleProtese, error) {
+	return s.repo.Listar(page, limit)
 }
 
 func (s *controleService) BuscarPorID(id int) (*models.ControleProtese, error) {
@@ -50,6 +52,7 @@ func (s *controleService) BuscarPorID(id int) (*models.ControleProtese, error) {
 func (s *controleService) AlterarStatus(id int, status string) error {
 	return s.repo.AlterarStatus(id, status)
 }
+
 func (s *controleService) ListarFiltrado(
 	data string,
 	dataInicio string,
@@ -59,10 +62,13 @@ func (s *controleService) ListarFiltrado(
 	pacienteId int,
 	produto string,
 	etapa string,
+	page int,
+	limit int,
 ) ([]models.ControleProtese, error) {
 
 	return s.repo.ListarFiltrado(
 		data, dataInicio, dataFim, status,
 		laboratorioId, pacienteId, produto, etapa,
+		page, limit,
 	)
 }

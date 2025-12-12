@@ -7,3 +7,11 @@ type Laboratorio struct {
     Telefone string `json:"telefone"`
     Email    string `json:"email"`
 }
+
+type LaboratorioFiltro struct {
+    Nome    string `json:"nome"`
+    Contato string `json:"contato"`
+    Email   string `json:"email"`
+    Page    int    `json:"page"`
+    Limit   int    `json:"limit"`
+}

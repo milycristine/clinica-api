@@ -37,7 +37,7 @@ func (h *controleHandler) Criar(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		resp.ErrorMessage = err.Error()
-		w.WriteHeader(500)
+		w.WriteHeader(400)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -57,7 +57,7 @@ func (h *controleHandler) Editar(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		resp.ErrorMessage = err.Error()
-		w.WriteHeader(500)
+		w.WriteHeader(400)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -65,8 +65,11 @@ func (h *controleHandler) Editar(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *controleHandler) Listar(w http.ResponseWriter, r *http.Request) {
-	lista, err := h.service.Listar()
 
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+
+	lista, err := h.service.Listar(page, limit)
 	resp := models.ResponseDefaultModel{IsSuccess: err == nil, Data: lista}
 
 	if err != nil {
@@ -84,7 +87,7 @@ func (h *controleHandler) BuscarPorID(w http.ResponseWriter, r *http.Request) {
 
 	item, err := h.service.BuscarPorID(id)
 	if err != nil {
-		http.Error(w, "Erro ao buscar prótese", 500)
+		http.Error(w, err.Error(), 500)
 		return
 	}
 	if item == nil {
@@ -97,6 +100,7 @@ func (h *controleHandler) BuscarPorID(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
+
 func (h *controleHandler) AlterarStatus(w http.ResponseWriter, r *http.Request) {
 	idStr := r.URL.Query().Get("id")
 	status := r.URL.Query().Get("status")
@@ -108,13 +112,17 @@ func (h *controleHandler) AlterarStatus(w http.ResponseWriter, r *http.Request) 
 
 	if err != nil {
 		resp.ErrorMessage = err.Error()
-		w.WriteHeader(500)
+		w.WriteHeader(400)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
+
 func (h *controleHandler) ListarFiltrado(w http.ResponseWriter, r *http.Request) {
+
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 
 	data := r.URL.Query().Get("data")
 	dataInicio := r.URL.Query().Get("dataInicio")
@@ -127,14 +135,9 @@ func (h *controleHandler) ListarFiltrado(w http.ResponseWriter, r *http.Request)
 	pacienteId, _ := strconv.Atoi(r.URL.Query().Get("pacienteId"))
 
 	lista, err := h.service.ListarFiltrado(
-		data,
-		dataInicio,
-		dataFim,
-		status,
-		laboratorioId,
-		pacienteId,
-		produto,
-		etapa,
+		data, dataInicio, dataFim, status,
+		laboratorioId, pacienteId, produto, etapa,
+		page, limit,
 	)
 
 	resp := models.ResponseDefaultModel{
@@ -144,7 +147,7 @@ func (h *controleHandler) ListarFiltrado(w http.ResponseWriter, r *http.Request)
 
 	if err != nil {
 		resp.ErrorMessage = err.Error()
-		w.WriteHeader(500)
+		w.WriteHeader(400)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

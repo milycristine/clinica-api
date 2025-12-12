@@ -10,8 +10,9 @@ import (
 
 type ControleProteseRepository interface {
 	Criar(c *models.ControleProtese) error
+	ExisteDuplicacao(c *models.ControleProtese) (bool, error)
 	Editar(c *models.ControleProtese) error
-	Listar() ([]models.ControleProtese, error)
+	Listar(page int, limit int) ([]models.ControleProtese, error)
 	BuscarPorID(id int) (*models.ControleProtese, error)
 	AlterarStatus(id int, status string) error
 	ListarFiltrado(
@@ -23,6 +24,8 @@ type ControleProteseRepository interface {
 		pacienteId int,
 		produto string,
 		etapa string,
+		page int,
+		limit int,
 	) ([]models.ControleProtese, error)
 }
 
@@ -31,24 +34,57 @@ type controleRepository struct {
 }
 
 func NovoControleRepository(conn *database.SQLStr) ControleProteseRepository {
-	return &controleRepository{
-		db: conn.DB(),
+	return &controleRepository{db: conn.DB()}
+}
+func (r *controleRepository) ExisteDuplicacao(c *models.ControleProtese) (bool, error) {
+	query := `
+		SELECT COUNT(1)
+		FROM ControleProteses WITH (NOLOCK)
+		WHERE PacienteId=@PacienteId
+		AND Produto=@Produto
+		AND LaboratorioId=@LaboratorioId
+		AND CAST(DataEnvio AS DATE) = CAST(@DataEnvio AS DATE)
+	`
+
+	var qtd int
+	err := r.db.QueryRow(
+		query,
+		sql.Named("PacienteId", c.PacienteId),
+		sql.Named("Produto", c.Produto),
+		sql.Named("LaboratorioId", c.LaboratorioId),
+		sql.Named("DataEnvio", c.DataEnvio),
+	).Scan(&qtd)
+
+	if err != nil {
+		return false, err
 	}
+
+	return qtd > 0, nil
 }
 
 func (r *controleRepository) Criar(c *models.ControleProtese) error {
+
+	duplicado, err := r.ExisteDuplicacao(c)
+	if err != nil {
+		return err
+	}
+	if duplicado {
+		return fmt.Errorf("já existe uma prótese igual cadastrada hoje para este paciente e laboratório")
+	}
+
 	query := `
-        INSERT INTO ControleProteses
-        (Ficha, PacienteId, LaboratorioId, Produto, EtapaAtual, TrabalhoFinal,
-        DataEnvio, DataEntregaPrevista, DataRecebimento, Status, Observacoes,
-        CustoUnitario, Quantidade)
-        VALUES (
-            @Ficha, @PacienteId, @LaboratorioId, @Produto, @EtapaAtual, @TrabalhoFinal,
-            @DataEnvio, @DataEntregaPrevista, @DataRecebimento, @Status, @Observacoes,
-            @CustoUnitario, @Quantidade
-        )
-    `
-	_, err := r.db.Exec(query,
+		INSERT INTO ControleProteses
+		(Ficha, PacienteId, LaboratorioId, Produto, EtapaAtual, TrabalhoFinal,
+		DataEnvio, DataEntregaPrevista, DataRecebimento, Status, Observacoes,
+		CustoUnitario, Quantidade)
+		VALUES (
+			@Ficha, @PacienteId, @LaboratorioId, @Produto, @EtapaAtual, @TrabalhoFinal,
+			@DataEnvio, @DataEntregaPrevista, @DataRecebimento, @Status, @Observacoes,
+			@CustoUnitario, @Quantidade
+		)
+	`
+
+	_, err = r.db.Exec(query,
 		sql.Named("Ficha", c.Ficha),
 		sql.Named("PacienteId", c.PacienteId),
 		sql.Named("LaboratorioId", c.LaboratorioId),
@@ -65,7 +101,7 @@ func (r *controleRepository) Criar(c *models.ControleProtese) error {
 	)
 
 	if err != nil {
-		return fmt.Errorf("erro ao criar controle de prótese: %w", err)
+		return fmt.Errorf("erro ao criar: %w", err)
 	}
 
 	return nil
@@ -73,7 +109,7 @@ func (r *controleRepository) Criar(c *models.ControleProtese) error {
 
 func (r *controleRepository) Editar(c *models.ControleProtese) error {
 	if c.ProteseId == 0 {
-		return fmt.Errorf("ID da prótese é obrigatório")
+		return fmt.Errorf("ID é obrigatório")
 	}
 
 	var updates []string
@@ -141,45 +177,53 @@ func (r *controleRepository) Editar(c *models.ControleProtese) error {
 	query := fmt.Sprintf(`
         UPDATE ControleProteses
         SET %s
-        WHERE ProteseId = @ProteseId
+        WHERE ProteseId=@ProteseId
     `, strings.Join(updates, ", "))
 
 	_, err := r.db.Exec(query, args...)
 	if err != nil {
-		return fmt.Errorf("erro ao editar prótese: %w", err)
+		return fmt.Errorf("erro ao editar: %w", err)
 	}
 
 	return nil
 }
 
-func (r *controleRepository) Listar() ([]models.ControleProtese, error) {
-	lista := []models.ControleProtese{}
+func (r *controleRepository) Listar(page int, limit int) ([]models.ControleProtese, error) {
+
+	if page <= 0 {
+		page = 1
+	}
+	offset := (page - 1) * limit
 
 	query := `
-        SELECT ProteseId, Ficha, PacienteId, LaboratorioId, Produto, EtapaAtual,
-               TrabalhoFinal, DataEnvio, DataEntregaPrevista, DataRecebimento,
-               Status, Observacoes, CustoUnitario, Quantidade, CustoTotal
-        FROM ControleProteses WITH (NOLOCK)
-        ORDER BY ProteseId DESC
-    `
+		SELECT ProteseId, Ficha, PacienteId, LaboratorioId, Produto, EtapaAtual,
+		TrabalhoFinal, DataEnvio, DataEntregaPrevista, DataRecebimento,
+		Status, Observacoes, CustoUnitario, Quantidade, CustoTotal
+		FROM ControleProteses WITH (NOLOCK)
+		ORDER BY ProteseId DESC
+		OFFSET @Offset ROWS
+		FETCH NEXT @Limit ROWS ONLY
+	`
 
-	rows, err := r.db.Query(query)
+	rows, err := r.db.Query(query,
+		sql.Named("Offset", offset),
+		sql.Named("Limit", limit),
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
+	lista := []models.ControleProtese{}
+
 	for rows.Next() {
 		var c models.ControleProtese
-		err := rows.Scan(
-			&c.ProteseId, &c.Ficha, &c.PacienteId, &c.LaboratorioId, &c.Produto,
-			&c.EtapaAtual, &c.TrabalhoFinal, &c.DataEnvio, &c.DataEntregaPrevista,
-			&c.DataRecebimento, &c.Status, &c.Observacoes, &c.CustoUnitario,
-			&c.Quantidade, &c.CustoTotal,
+		rows.Scan(
+			&c.ProteseId, &c.Ficha, &c.PacienteId, &c.LaboratorioId,
+			&c.Produto, &c.EtapaAtual, &c.TrabalhoFinal, &c.DataEnvio,
+			&c.DataEntregaPrevista, &c.DataRecebimento, &c.Status,
+			&c.Observacoes, &c.CustoUnitario, &c.Quantidade, &c.CustoTotal,
 		)
-		if err != nil {
-			return nil, err
-		}
 		lista = append(lista, c)
 	}
 
@@ -193,8 +237,8 @@ func (r *controleRepository) BuscarPorID(id int) (*models.ControleProtese, error
         SELECT ProteseId, Ficha, PacienteId, LaboratorioId, Produto, EtapaAtual,
                TrabalhoFinal, DataEnvio, DataEntregaPrevista, DataRecebimento,
                Status, Observacoes, CustoUnitario, Quantidade, CustoTotal
-        FROM ControleProteses
-        WHERE ProteseId = @ProteseId
+        FROM ControleProteses WITH (NOLOCK)
+        WHERE ProteseId=@ProteseId
     `
 
 	err := r.db.QueryRow(query, sql.Named("ProteseId", id)).Scan(
@@ -232,6 +276,7 @@ func (r *controleRepository) AlterarStatus(id int, status string) error {
 
 	return nil
 }
+
 func (r *controleRepository) ListarFiltrado(
 	data string,
 	dataInicio string,
@@ -241,68 +286,99 @@ func (r *controleRepository) ListarFiltrado(
 	pacienteId int,
 	produto string,
 	etapa string,
+	page int,
+	limit int,
 ) ([]models.ControleProtese, error) {
 
 	filtros := []string{}
 	params := []any{}
 
-	// FILTRO POR DATA ESPECÍFICA
+	normalizeDate := func(s string) string {
+		if len(s) >= 10 {
+			return s[:10] 
+		}
+		return s
+	}
+	data = normalizeDate(data)
+	dataInicio = normalizeDate(dataInicio)
+	dataFim = normalizeDate(dataFim)
+
+	
 	if data != "" {
-		filtros = append(filtros, "CONVERT(date, DataEnvio) = @Data")
+		filtros = append(filtros, "CAST(DataEnvio AS DATE) = CAST(@Data AS DATE)")
 		params = append(params, sql.Named("Data", data))
 	}
 
-	// FILTRO POR PERÍODO
+
 	if dataInicio != "" && dataFim != "" {
-		filtros = append(filtros, "CONVERT(date, DataEnvio) BETWEEN @DataInicio AND @DataFim")
-		params = append(params,
-			sql.Named("DataInicio", dataInicio),
-			sql.Named("DataFim", dataFim),
-		)
+		filtros = append(filtros, "CAST(DataEnvio AS DATE) BETWEEN CAST(@DataInicio AS DATE) AND CAST(@DataFim AS DATE)")
+		params = append(params, sql.Named("DataInicio", dataInicio))
+		params = append(params, sql.Named("DataFim", dataFim))
+	} else if dataInicio != "" {
+		filtros = append(filtros, "CAST(DataEnvio AS DATE) >= CAST(@DataInicio AS DATE)")
+		params = append(params, sql.Named("DataInicio", dataInicio))
+	} else if dataFim != "" {
+		filtros = append(filtros, "CAST(DataEnvio AS DATE) <= CAST(@DataFim AS DATE)")
+		params = append(params, sql.Named("DataFim", dataFim))
 	}
 
-	// STATUS
+	
 	if status != "" {
-		filtros = append(filtros, "Status = @Status")
-		params = append(params, sql.Named("Status", status))
+		filtros = append(filtros, "Status LIKE @StatusFiltro")
+		params = append(params, sql.Named("StatusFiltro", "%"+status+"%"))
 	}
 
-	// LABORATÓRIO
+
 	if laboratorioId != 0 {
-		filtros = append(filtros, "LaboratorioId = @LaboratorioId")
+		filtros = append(filtros, "LaboratorioId=@LaboratorioId")
 		params = append(params, sql.Named("LaboratorioId", laboratorioId))
 	}
 
-	// PACIENTE
+
 	if pacienteId != 0 {
-		filtros = append(filtros, "PacienteId = @PacienteId")
+		filtros = append(filtros, "PacienteId=@PacienteId")
 		params = append(params, sql.Named("PacienteId", pacienteId))
 	}
 
-	// PRODUTO
 	if produto != "" {
 		filtros = append(filtros, "Produto LIKE @Produto")
 		params = append(params, sql.Named("Produto", "%"+produto+"%"))
 	}
 
-	// ETAPA ATUAL
 	if etapa != "" {
 		filtros = append(filtros, "EtapaAtual LIKE @EtapaAtual")
 		params = append(params, sql.Named("EtapaAtual", "%"+etapa+"%"))
 	}
 
+
+	if limit <= 0 {
+		limit = 999999 
+	}
+
+	if page <= 0 {
+		page = 1
+	}
+	offset := (page - 1) * limit
+
 	query := `
-        SELECT ProteseId, Ficha, PacienteId, LaboratorioId, Produto, EtapaAtual,
-               TrabalhoFinal, DataEnvio, DataEntregaPrevista, DataRecebimento,
-               Status, Observacoes, CustoUnitario, Quantidade, CustoTotal
-        FROM ControleProteses WITH (NOLOCK)
-    `
+		SELECT ProteseId, Ficha, PacienteId, LaboratorioId, Produto, EtapaAtual,
+		TrabalhoFinal, DataEnvio, DataEntregaPrevista, DataRecebimento,
+		Status, Observacoes, CustoUnitario, Quantidade, CustoTotal
+		FROM ControleProteses WITH (NOLOCK)
+	`
 
 	if len(filtros) > 0 {
 		query += " WHERE " + strings.Join(filtros, " AND ")
 	}
 
-	query += " ORDER BY ProteseId DESC"
+	query += `
+		ORDER BY ProteseId DESC
+		OFFSET @Offset ROWS
+		FETCH NEXT @Limit ROWS ONLY
+	`
+
+	params = append(params, sql.Named("Offset", offset))
+	params = append(params, sql.Named("Limit", limit))
 
 	rows, err := r.db.Query(query, params...)
 	if err != nil {
@@ -314,15 +390,12 @@ func (r *controleRepository) ListarFiltrado(
 
 	for rows.Next() {
 		var c models.ControleProtese
-		err := rows.Scan(
+		rows.Scan(
 			&c.ProteseId, &c.Ficha, &c.PacienteId, &c.LaboratorioId, &c.Produto,
 			&c.EtapaAtual, &c.TrabalhoFinal, &c.DataEnvio, &c.DataEntregaPrevista,
 			&c.DataRecebimento, &c.Status, &c.Observacoes,
 			&c.CustoUnitario, &c.Quantidade, &c.CustoTotal,
 		)
-		if err != nil {
-			return nil, err
-		}
 		lista = append(lista, c)
 	}
 
