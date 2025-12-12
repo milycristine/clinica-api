@@ -18,5 +18,8 @@ func SetupRoutes(mux *http.ServeMux, db *dbsql.SQLStr) {
 	routes.RegisterProcedimentoRoutes(mux, db)
 	routes.RegisterGlosasMensalRoutes(mux, db)
 	routes.RegisterGlosasDetalhesRoutes(mux, db)
+	routes.RegisterLaboratorioRoutes(mux, db)
+	routes.RegisterControleProteseRoutes(mux, db)
+	routes.RegisterFechamentoRoutes(mux, db)
 
 }

@@ -13,7 +13,6 @@ type GlosaDetalhe struct {
     GlosasMensalId *int    `json:"glosas_mensal_id"`
     UnidadeId      int     `json:"unidade_id"`
 
-    // NOVO — lista de procedimentos
     Procedimentos []GlosaProcedimento `json:"procedimentos"`
 }
 
