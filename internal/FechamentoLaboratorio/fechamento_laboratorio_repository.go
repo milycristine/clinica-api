@@ -38,7 +38,6 @@ func (r *fechamentoRepository) Criar(f *models.LaboratorioFechamento) error {
         VALUES (@LaboratorioId, @DataFinalizacao, @Produto, @PacienteId, @Quantidade, @PrecoUnitario)
     `
 
-    // paciente pode ser NULL
     var pacienteParam interface{}
     if f.PacienteId == nil {
         pacienteParam = nil

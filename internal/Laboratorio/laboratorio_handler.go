@@ -12,8 +12,6 @@ type LaboratorioHandler interface {
 	EditarLaboratorio(w http.ResponseWriter, r *http.Request)
 	ListarLaboratorios(w http.ResponseWriter, r *http.Request)
 	BuscarLaboratorioPorID(w http.ResponseWriter, r *http.Request)
-	
-
 }
 
 type laboratorioHandler struct {
@@ -61,14 +59,42 @@ func (h *laboratorioHandler) EditarLaboratorio(w http.ResponseWriter, r *http.Re
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
-
 func (h *laboratorioHandler) ListarLaboratorios(w http.ResponseWriter, r *http.Request) {
-	lista, err := h.service.ListarLaboratorios()
 
-	resp := models.ResponseDefaultModel{IsSuccess: true, Data: lista}
+	filtro := models.LaboratorioFiltro{
+		Nome:    r.URL.Query().Get("nome"),
+		Contato: r.URL.Query().Get("contato"),
+		Email:   r.URL.Query().Get("email"),
+	}
+
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+
+	if page <= 0 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+
+	filtro.Page = page
+	filtro.Limit = limit
+
+	lista, total, err := h.service.ListarLaboratorios(filtro)
+
+	resp := models.ResponseDefaultModel{
+		IsSuccess: true,
+		Data: map[string]any{
+			"total": total,
+			"page":  page,
+			"limit": limit,
+			"items": lista,
+		},
+	}
+
 	if err != nil {
 		resp.IsSuccess = false
-		resp.ErrorMessage = "Erro ao listar laboratórios"
+		resp.ErrorMessage = err.Error()
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 

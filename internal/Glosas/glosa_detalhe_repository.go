@@ -32,7 +32,6 @@ func (r *glosaDetalheRepository) CriarGlosa(g *models.GlosaDetalhe) error {
         return err
     }
 
-    // Inserir registro principal
     query := `
         INSERT INTO GlosasDetalhes 
         (GlosasMensalId, UnidadeId, Guia, DataOcorrencia, PacienteId, Mo, NomeContratado, 
@@ -62,7 +61,6 @@ func (r *glosaDetalheRepository) CriarGlosa(g *models.GlosaDetalhe) error {
         return fmt.Errorf("erro ao criar GlosasDetalhes: %w", err)
     }
 
-    // Inserir múltiplos procedimentos
     for _, p := range g.Procedimentos {
         _, err = tx.Exec(`
             INSERT INTO GlosaProcedimentos
@@ -141,7 +139,6 @@ func (r *glosaDetalheRepository) EditarGlosa(g *models.GlosaDetalhe) error {
         return err
     }
 
-    // atualizar procedimentos (simples: apaga e recria)
     _, err = tx.Exec("DELETE FROM GlosaProcedimentos WHERE GlosaDetalheId = @Id",
         sql.Named("Id", g.GlosaDetalheId),
     )
@@ -204,7 +201,6 @@ func (r *glosaDetalheRepository) ListarGlosas() ([]models.GlosaDetalhe, error) {
             &g.UnidadeId,
         )
 
-        // pegar procedimentos
         g.Procedimentos, _ = r.buscarProcedimentos(g.GlosaDetalheId)
 
         lista = append(lista, g)
