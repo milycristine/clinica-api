@@ -143,7 +143,7 @@ func (r *fechamentoRepository) Listar() ([]models.LaboratorioFechamento, error) 
             &f.FechamentoId, &f.LaboratorioId, &f.DataFinalizacao, &f.Produto,
             &paciente, &f.Quantidade, &f.PrecoUnitario, &f.Total,
         ); err != nil {
-            return nil, err
+            return nil, err                                                                                             
         }
         if paciente.Valid {
             pid := int(paciente.Int64)
