@@ -34,10 +34,10 @@ func (r *glosaDetalheRepository) CriarGlosa(g *models.GlosaDetalhe) error {
 
     query := `
         INSERT INTO GlosasDetalhes 
-        (GlosasMensalId, UnidadeId, Guia, DataOcorrencia, PacienteId, Mo, NomeContratado, 
+        (GlosasMensalId, UnidadeId, ConvenioProcedimentoId, Guia, DataOcorrencia, PacienteId, Mo, NomeContratado, 
          DenteRegiao, MotivoGlosa, StatusRecurso)
         OUTPUT INSERTED.GlosaDetalheId
-        VALUES (@MensalId, @UnidadeId, @Guia, @DataOcorrencia, @PacienteId, @Mo, @NomeContratado,
+        VALUES (@MensalId, @UnidadeId, @ConvenioProcedimentoId, @Guia, @DataOcorrencia, @PacienteId, @Mo, @NomeContratado,
                 @DenteRegiao, @MotivoGlosa, @StatusRecurso)
     `
 
@@ -46,6 +46,7 @@ func (r *glosaDetalheRepository) CriarGlosa(g *models.GlosaDetalhe) error {
         query,
         sql.Named("MensalId", g.GlosasMensalId),
         sql.Named("UnidadeId", g.UnidadeId),
+        sql.Named("ConvenioProcedimentoId", g.ConvenioProcedimentoId),
         sql.Named("Guia", g.Guia),
         sql.Named("DataOcorrencia", g.DataOcorrencia),
         sql.Named("PacienteId", g.PacienteId),
@@ -175,7 +176,7 @@ func (r *glosaDetalheRepository) ListarGlosas() ([]models.GlosaDetalhe, error) {
     lista := []models.GlosaDetalhe{}
 
     rows, err := r.db.Query(`
-        SELECT GlosaDetalheId, Guia, DataOcorrencia, PacienteId, Mo, NomeContratado,
+        SELECT GlosaDetalheId, ConvenioProcedimentoId,  Guia, DataOcorrencia, PacienteId, Mo, NomeContratado,
                DenteRegiao, MotivoGlosa, StatusRecurso, UnidadeId
         FROM GlosasDetalhes WITH (NOLOCK)
         ORDER BY DataOcorrencia DESC
@@ -190,6 +191,7 @@ func (r *glosaDetalheRepository) ListarGlosas() ([]models.GlosaDetalhe, error) {
 
         rows.Scan(
             &g.GlosaDetalheId,
+            &g.ConvenioProcedimentoId,
             &g.Guia,
             &g.DataOcorrencia,
             &g.PacienteId,
@@ -213,7 +215,7 @@ func (r *glosaDetalheRepository) BuscarPorId(id int) (*models.GlosaDetalhe, erro
     var g models.GlosaDetalhe
 
     query := `
-        SELECT GlosaDetalheId, Guia, DataOcorrencia, PacienteId, Mo,
+        SELECT GlosaDetalheId, ConvenioProcedimentoId, Guia, DataOcorrencia, PacienteId, Mo,
                NomeContratado, DenteRegiao, MotivoGlosa, StatusRecurso, UnidadeId
         FROM GlosasDetalhes
         WHERE GlosaDetalheId = @Id
@@ -221,6 +223,7 @@ func (r *glosaDetalheRepository) BuscarPorId(id int) (*models.GlosaDetalhe, erro
 
     err := r.db.QueryRow(query, sql.Named("Id", id)).Scan(
         &g.GlosaDetalheId,
+        &g.ConvenioProcedimentoId,
         &g.Guia,
         &g.DataOcorrencia,
         &g.PacienteId,
@@ -246,19 +249,15 @@ func (r *glosaDetalheRepository) BuscarPorId(id int) (*models.GlosaDetalhe, erro
 
 func (r *glosaDetalheRepository) ExisteGlosa(g *models.GlosaDetalhe) (bool, error) {
     var count int
+
     query := `
         SELECT COUNT(1)
         FROM GlosasDetalhes
-        WHERE Guia = @Guia
-          AND PacienteId = @PacienteId
-          AND DataOcorrencia = @DataOcorrencia
-          AND UnidadeId = @UnidadeId
+        WHERE ConvenioProcedimentoId = @ConvenioId
     `
+
     err := r.db.QueryRow(query,
-        sql.Named("Guia", g.Guia),
-        sql.Named("PacienteId", g.PacienteId),
-        sql.Named("DataOcorrencia", g.DataOcorrencia),
-        sql.Named("UnidadeId", g.UnidadeId),
+        sql.Named("ConvenioId", g.ConvenioProcedimentoId),
     ).Scan(&count)
 
     return count > 0, err
