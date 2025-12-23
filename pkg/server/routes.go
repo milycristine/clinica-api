@@ -24,5 +24,6 @@ func SetupRoutes(mux *http.ServeMux, db *dbsql.SQLStr) {
 	routes.RegisterConvenioRoutes(mux, db)
 	routes.RegisterConvenioProcedimentoRoutes(mux, db)
 	routes.RegisterReceitaRoutes(mux, db)
+	routes.RegisterDespesaRoutes(mux, db)
 
 }
